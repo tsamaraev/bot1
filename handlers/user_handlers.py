@@ -3,15 +3,15 @@ from aiogram import Router, F
 from aiogram.filters import CommandStart
 from aiogram.types import Message, PreCheckoutQuery, CallbackQuery, ChatMemberUpdated, InlineKeyboardMarkup, \
     InlineKeyboardButton
-from dotenv import load_dotenv
+
 from datetime import datetime, timedelta
 from utils.constants import START_MESSAGE, PRICE
 from keyboards import inline_kb
 from database import SessionLocal, UserPayments
 import asyncio
+from utils.config import PAYMENTS_TOKEN
 
-load_dotenv()
-payments_token = os.getenv("PAYMENTS_TOKEN")
+payments_token = PAYMENTS_TOKEN
 if not payments_token:
     raise ValueError("Ошибка: PAYMENTS_TOKEN не найден. Проверьте .env файл.")
 
@@ -92,6 +92,11 @@ async def successful_payment_handler(message: Message):
             )
             db_session.add(payment)
         db_session.commit()
+
+    try:
+        await message.bot.unban_chat_member(group_chat_id, user_id)
+    except Exception as e:
+        print(f"Ошибка при снятии бана: {e}")
 
     expire_time = datetime.now() + timedelta(hours=24)
     new_invite_link = await message.bot.create_chat_invite_link(
