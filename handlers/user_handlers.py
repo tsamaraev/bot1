@@ -3,15 +3,15 @@ from aiogram import Router, F
 from aiogram.filters import CommandStart, Command
 from aiogram.types import Message, PreCheckoutQuery, CallbackQuery, ChatMemberUpdated, InlineKeyboardMarkup, \
     InlineKeyboardButton
-from dotenv import load_dotenv
+
 from datetime import datetime, timedelta
 from utils.constants import START_MESSAGE, PRICE, ADMIN_ID
 from keyboards import inline_kb
 from database import SessionLocal, UserPayments
 import asyncio
+from utils.config import PAYMENTS_TOKEN
 
-load_dotenv()
-payments_token = os.getenv("PAYMENTS_TOKEN")
+payments_token = PAYMENTS_TOKEN
 if not payments_token:
     raise ValueError("Ошибка: PAYMENTS_TOKEN не найден. Проверьте .env файл.")
 
