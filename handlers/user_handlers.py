@@ -1,11 +1,11 @@
 import os
 from aiogram import Router, F
-from aiogram.filters import CommandStart
+from aiogram.filters import CommandStart, Command
 from aiogram.types import Message, PreCheckoutQuery, CallbackQuery, ChatMemberUpdated, InlineKeyboardMarkup, \
     InlineKeyboardButton
 from dotenv import load_dotenv
 from datetime import datetime, timedelta
-from utils.constants import START_MESSAGE, PRICE
+from utils.constants import START_MESSAGE, PRICE, ADMIN_ID
 from keyboards import inline_kb
 from database import SessionLocal, UserPayments
 import asyncio
@@ -30,12 +30,11 @@ def is_subscription_active(user_id: int) -> bool:
 async def payment_handler(callback_query: CallbackQuery):
     user_id = callback_query.from_user.id
     chat_member = await callback_query.bot.get_chat_member(group_chat_id, user_id)
-    print(chat_member)
     if chat_member.status == 'kicked':
         await callback_query.bot.unban_chat_member(group_chat_id, user_id)
         await asyncio.sleep(1)
 
-    print(chat_member)
+
 
     if is_subscription_active(user_id):
         expire_time = datetime.now() + timedelta(hours=24)
@@ -68,8 +67,6 @@ async def checkout_handler(query: PreCheckoutQuery):
 @user.message(lambda message: message.successful_payment is not None)
 async def successful_payment_handler(message: Message):
     user_id = message.from_user.id
-    chat_member = await message.bot.get_chat_member(group_chat_id, user_id)
-    print(chat_member)
 
     with SessionLocal() as db_session:
         payment = db_session.query(UserPayments).filter_by(user_id=user_id).first()
@@ -93,6 +90,11 @@ async def successful_payment_handler(message: Message):
             db_session.add(payment)
         db_session.commit()
 
+    try:
+        await message.bot.unban_chat_member(group_chat_id, user_id)
+    except Exception as e:
+        print(f"Ошибка при снятии бана: {e}")
+
     expire_time = datetime.now() + timedelta(hours=24)
     new_invite_link = await message.bot.create_chat_invite_link(
         group_chat_id, expire_date=expire_time, member_limit=10
@@ -111,26 +113,21 @@ async def successful_payment_handler(message: Message):
 
 @user.callback_query(F.data == "finished_course")
 async def finished_course_handler(callback_query: CallbackQuery):
-    await callback_query.answer("К")
+    await callback_query.answer("")
     await callback_query.message.bot.send_message(
         admin_id,
         f"Пользователь {callback_query.from_user.username or callback_query.from_user.id} завершил курс."
     )
 
-
-@user.message(CommandStart)
+@user.message(Command("start"))
 async def cmd_start(message: Message):
     if message.chat.type == 'private':
         await message.answer(START_MESSAGE, reply_markup=inline_kb)
 
+
 @user.chat_member()
 async def chat_member_status(event: ChatMemberUpdated):
     user_id = event.new_chat_member.user.id
-    chat = event.chat.get_member(user_id=user_id)
-    print(user_id, chat)
     if not is_subscription_active(user_id):
         await event.bot.ban_chat_member(group_chat_id, user_id)
         await asyncio.sleep(1)
-        print("Бан")
-    else:
-        print("Есть подписка")

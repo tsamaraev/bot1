@@ -1,3 +1,4 @@
+# Код БД
 from sqlalchemy import Column, Integer, String, Float, DateTime, create_engine, Boolean
 from sqlalchemy.orm import declarative_base, sessionmaker
 from datetime import datetime
@@ -17,13 +18,17 @@ class UserPayments(Base):
     status = Column(String, default="не оплачено")
     verified = Column(Boolean, default=False)
 
-class GroupLinks(Base):
+class Groups(Base):
     __tablename__ = "group_links"
     id = Column(Integer, primary_key=True, index=True)
-    group_name = Column(String, unique=True, index=True)
-    link = Column(String)
+    group_name = Column(String, unique=True, index=True, nullable=False)  # Название группы
+    price = Column(Float, nullable=False)  # Цена
+    group_id = Column(Integer, unique=True, nullable=False) # id группы
 
 engine = create_engine(DATABASE_URL)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 Base.metadata.create_all(engine)
+
+
+
