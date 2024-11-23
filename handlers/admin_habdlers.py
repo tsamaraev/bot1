@@ -25,8 +25,7 @@ async def cmd_admin(message: Message):
         ])
 
         await message.answer("Добро пожаловать в админ-панель. Выберите действие:", reply_markup=admin_kb)
-    else:
-        await message.answer("Неизвестная команда")
+
 
 
 @admin.callback_query(F.data == "add_bot_to_group")
@@ -88,12 +87,14 @@ async def bot_added(event: ChatMemberUpdated):
                         f"ID группы: {group_id}"
                     )
                 )
-            except Exception as e:
+            except Exception:
                 db.rollback()
                 await event.bot.send_message(
                     chat_id=admin_id,
-                    text=f"Ошибка при сохранении данных группы: {e}"
+                    text=f"Ошибка при сохранении данных группы. Попробуйте заново вести данные"
                 )
+                await event.bot.leave_chat(chat_id=group_id)
+
             finally:
                 db.close()
         else:
@@ -106,6 +107,7 @@ async def bot_added(event: ChatMemberUpdated):
             chat_id=admin_id,
             text="Ошибка: бот был добавлен в группу, но не в качестве администратора. Проверьте настройки!"
         )
+
 
 
 @admin.callback_query(F.data == "all_groups")
@@ -122,10 +124,10 @@ async def show_groups(callback_query: CallbackQuery):
                     for group in groups
                 ]
             )
-            await callback_query.message.edit_text(f"Список групп:\n\n{group_list}")
+            await callback_query.message.answer(f"Список групп:\n\n{group_list}")
         else:
-            await callback_query.message.edit_text("В базе данных пока нет групп.")
+            await callback_query.message.answer("В базе данных пока нет групп.")
     except Exception as e:
-        await callback_query.message.edit_text(f"Ошибка при получении данных: {e}")
+        await callback_query.message.answer(f"Ошибка при получении данных: {e}")
     finally:
         db.close()
