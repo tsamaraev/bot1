@@ -6,19 +6,15 @@ from aiogram.types import Message, CallbackQuery, ChatMemberUpdated, InlineKeybo
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from database import SessionLocal, Groups
+from utils.constants import ADMIN_ID
+from states.state import RegGroup
+
+router = Router()
 
 
-admin = Router()
-admin_id = 1446066933
-
-class RegGroup(StatesGroup):
-    name = State()
-    price = State()
-    group_id = State()
-
-@admin.message(Command('admin'))
+@router.message(Command('admin'))
 async def cmd_admin(message: Message):
-    if message.from_user.id == admin_id and message.chat.type == "private":
+    if message.from_user.id == ADMIN_ID and message.chat.type == "private":
         admin_kb = InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="Добавить бота в группу", callback_data="add_bot_to_group")],
             [InlineKeyboardButton(text="Список групп", callback_data="all_groups")]
@@ -28,12 +24,12 @@ async def cmd_admin(message: Message):
 
 
 
-@admin.callback_query(F.data == "add_bot_to_group")
+@router.callback_query(F.data == "add_bot_to_group")
 async def reg_name(callback_query: CallbackQuery, state: FSMContext):
     await state.set_state(RegGroup.name)
     await callback_query.message.answer(f"Введите название группы:")
 
-@admin.message(RegGroup.name)
+@router.message(RegGroup.name)
 async def process_name(message: Message, state: FSMContext):
     await state.update_data(name=message.text)
     await state.set_state(RegGroup.price)
@@ -41,7 +37,7 @@ async def process_name(message: Message, state: FSMContext):
 
 group_data = {}
 
-@admin.message(RegGroup.price)
+@router.message(RegGroup.price)
 async def reg_price(message: Message, state: FSMContext):
     data = await state.get_data()
     group_name = data.get("name")
@@ -60,11 +56,11 @@ async def reg_price(message: Message, state: FSMContext):
     )
 
 
-@admin.my_chat_member(ChatMemberUpdatedFilter(member_status_changed=JOIN_TRANSITION))
+@router.my_chat_member(ChatMemberUpdatedFilter(member_status_changed=JOIN_TRANSITION))
 async def bot_added(event: ChatMemberUpdated):
     if event.new_chat_member.status == ChatMemberStatus.ADMINISTRATOR:
-        if admin_id in group_data:
-            group_info = group_data.pop(admin_id)
+        if ADMIN_ID in group_data:
+            group_info = group_data.pop(ADMIN_ID)
             group_name = group_info.get("name")
             group_price = group_info.get("price")
             group_id = event.chat.id
@@ -79,7 +75,7 @@ async def bot_added(event: ChatMemberUpdated):
                 db.add(new_group)
                 db.commit()
                 await event.bot.send_message(
-                    chat_id=admin_id,
+                    chat_id=ADMIN_ID,
                     text=(
                         f"Бот успешно добавлен в группу как администратор!\n"
                         f"Название группы: {group_name}\n"
@@ -90,7 +86,7 @@ async def bot_added(event: ChatMemberUpdated):
             except Exception:
                 db.rollback()
                 await event.bot.send_message(
-                    chat_id=admin_id,
+                    chat_id=ADMIN_ID,
                     text=f"Ошибка при сохранении данных группы. Попробуйте заново вести данные"
                 )
                 await event.bot.leave_chat(chat_id=group_id)
@@ -99,18 +95,18 @@ async def bot_added(event: ChatMemberUpdated):
                 db.close()
         else:
             await event.bot.send_message(
-                chat_id=admin_id,
+                chat_id=ADMIN_ID,
                 text="Ошибка: данные о группе не найдены. Попробуйте ещё раз."
             )
     else:
         await event.bot.send_message(
-            chat_id=admin_id,
+            chat_id=ADMIN_ID,
             text="Ошибка: бот был добавлен в группу, но не в качестве администратора. Проверьте настройки!"
         )
 
 
 
-@admin.callback_query(F.data == "all_groups")
+@router.callback_query(F.data == "all_groups")
 async def show_groups(callback_query: CallbackQuery):
     db = SessionLocal()
     try:

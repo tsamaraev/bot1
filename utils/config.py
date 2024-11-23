@@ -1,2 +1,8 @@
-TOKEN="75818868065:AAEI0Lcvy0MmpVKdHWT_WUMnGAaExRJPas8"
-PAYMENTS_TOKEN = '381764678:TEST:99225'
+from dotenv import load_dotenv
+import os
+
+load_dotenv()
+
+TOKEN= os.getenv('TOKEN')
+PAYMENTS_TOKEN = os.getenv('PAYMENTS_TOKEN')
+

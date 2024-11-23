@@ -11,16 +11,15 @@ from keyboards import inline_kb
 from database import SessionLocal, UserPayments
 
 from dotenv import load_dotenv
+from utils.constants import ADMIN_ID
+from utils.constants import CHAT_ID as group_chat_id
+from utils.config import PAYMENTS_TOKEN
 
-load_dotenv()
-payments_token = os.getenv("PAYMENTS_TOKEN")
-if not payments_token:
+
+if not PAYMENTS_TOKEN:
     raise ValueError("Ошибка: PAYMENTS_TOKEN не найден. Проверьте .env файл.")
 
-user = Router()
-admin_id = 1446066933
-group_chat_id = -1002198089460
-
+router = Router()
 
 def is_subscription_active(user_id: int) -> bool:
     with SessionLocal() as db_session:
@@ -28,7 +27,7 @@ def is_subscription_active(user_id: int) -> bool:
         return payment is not None
 
 
-@user.callback_query(F.data == "buy")
+@router.callback_query(F.data == "buy")
 async def payment_handler(callback_query: CallbackQuery):
     user_id = callback_query.from_user.id
     chat_member = await callback_query.bot.get_chat_member(group_chat_id, user_id)
@@ -55,18 +54,18 @@ async def payment_handler(callback_query: CallbackQuery):
             title="Премиум доступ",
             description="Доступ к эксклюзивному контенту.",
             payload="premium-access",
-            provider_token=payments_token,
+            provider_token=PAYMENTS_TOKEN,
             currency="RUB",
             prices=PRICE
         )
 
 
-@user.pre_checkout_query()
+@router.pre_checkout_query()
 async def checkout_handler(query: PreCheckoutQuery):
     await query.answer(ok=True)
 
 
-@user.message(lambda message: message.successful_payment is not None)
+@router.message(lambda message: message.successful_payment is not None)
 async def successful_payment_handler(message: Message):
     user_id = message.from_user.id
 
@@ -113,21 +112,21 @@ async def successful_payment_handler(message: Message):
     )
 
 
-@user.callback_query(F.data == "finished_course")
+@router.callback_query(F.data == "finished_course")
 async def finished_course_handler(callback_query: CallbackQuery):
     await callback_query.answer("")
     await callback_query.message.bot.send_message(
-        admin_id,
+         ADMIN_ID,
         f"Пользователь {callback_query.from_user.username or callback_query.from_user.id} завершил курс."
     )
 
-@user.message(Command("start"))
+@router.message(Command("start"))
 async def cmd_start(message: Message):
     if message.chat.type == 'private':
         await message.answer(START_MESSAGE, reply_markup=inline_kb)
 
 
-@user.chat_member()
+@router.chat_member()
 async def chat_member_status(event: ChatMemberUpdated):
     user_id = event.new_chat_member.user.id
     if not is_subscription_active(user_id):
