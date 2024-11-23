@@ -2,7 +2,6 @@ from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from database import SessionLocal, Groups
 
 
-# def
 # db = SessionLocal()
 # try:
 #     groups = db.query(Groups).all()
