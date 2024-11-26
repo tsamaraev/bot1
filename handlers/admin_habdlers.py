@@ -14,7 +14,7 @@ router = Router()
 
 @router.message(Command('admin'))
 async def cmd_admin(message: Message):
-    if message.from_user.id == ADMIN_ID and message.chat.type == "private":
+    if message.from_user.id in ADMIN_ID and message.chat.type == "private":
         admin_kb = InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="Добавить бота в группу", callback_data="add_bot_to_group")],
             [InlineKeyboardButton(text="Список групп", callback_data="all_groups")]
@@ -37,6 +37,7 @@ async def process_name(message: Message, state: FSMContext):
 
 group_data = {}
 
+
 @router.message(RegGroup.price)
 async def reg_price(message: Message, state: FSMContext):
     data = await state.get_data()
@@ -58,50 +59,44 @@ async def reg_price(message: Message, state: FSMContext):
 
 @router.my_chat_member(ChatMemberUpdatedFilter(member_status_changed=JOIN_TRANSITION))
 async def bot_added(event: ChatMemberUpdated):
-    if event.new_chat_member.status == ChatMemberStatus.ADMINISTRATOR:
-        if ADMIN_ID in group_data:
-            group_info = group_data.pop(ADMIN_ID)
-            group_name = group_info.get("name")
-            group_price = group_info.get("price")
-            group_id = event.chat.id
+    if event.from_user.id in ADMIN_ID:
+        print(group_data)
+        group_name = group_data.get(event.from_user.id).get('name')
+        group_price = group_data.get(event.from_user.id).get('price')
+        group_id = event.chat.id
 
-            db = SessionLocal()
-            try:
-                new_group = Groups(
-                    group_name=group_name,
-                    price=group_price,
-                    group_id=group_id
-                )
-                db.add(new_group)
-                db.commit()
-                await event.bot.send_message(
-                    chat_id=ADMIN_ID,
-                    text=(
-                        f"Бот успешно добавлен в группу как администратор!\n"
-                        f"Название группы: {group_name}\n"
-                        f"Цена: {group_price}\n"
-                        f"ID группы: {group_id}"
-                    )
-                )
-            except Exception:
-                db.rollback()
-                await event.bot.send_message(
-                    chat_id=ADMIN_ID,
-                    text=f"Ошибка при сохранении данных группы. Попробуйте заново вести данные"
-                )
-                await event.bot.leave_chat(chat_id=group_id)
-
-            finally:
-                db.close()
-        else:
-            await event.bot.send_message(
-                chat_id=ADMIN_ID,
-                text="Ошибка: данные о группе не найдены. Попробуйте ещё раз."
+        db = SessionLocal()
+        try:
+            new_group = Groups(
+                group_name=group_name,
+                price=group_price,
+                group_id=group_id
             )
+            db.add(new_group)
+            db.commit()
+            await event.bot.send_message(
+                chat_id=ADMIN_ID[1],
+                text=(
+                    f"Бот успешно добавлен в группу как администратор!\n"
+                    f"Название группы: {group_name}\n"
+                    f"Цена: {group_price}\n"
+                    f"ID группы: {group_id}"
+                )
+            )
+        except Exception:
+            db.rollback()
+            await event.bot.send_message(
+                chat_id=ADMIN_ID[1],
+                text=f"Ошибка при сохранении данных группы. Попробуйте заново вести данные"
+            )
+            await event.bot.leave_chat(chat_id=group_id)
+
+        finally:
+            db.close()
     else:
         await event.bot.send_message(
-            chat_id=ADMIN_ID,
-            text="Ошибка: бот был добавлен в группу, но не в качестве администратора. Проверьте настройки!"
+            chat_id=ADMIN_ID[1],
+            text="Ошибка: данные о группе не найдены. Попробуйте ещё раз."
         )
 
 
