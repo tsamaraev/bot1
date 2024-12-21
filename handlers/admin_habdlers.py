@@ -1,20 +1,21 @@
+from datetime import datetime, timedelta
 
 from aiogram import Router, F
 from aiogram.enums import ChatMemberStatus
 from aiogram.filters import Command, ChatMemberUpdatedFilter, JOIN_TRANSITION
 from aiogram.types import Message, CallbackQuery, ChatMemberUpdated, InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.fsm.context import FSMContext
-from aiogram.fsm.state import State, StatesGroup
-from database import SessionLocal, Groups
+from database import SessionLocal, Groups, UserPayments
 from utils.constants import ADMIN_ID
 from states.state import RegGroup
+
 
 router = Router()
 
 
 @router.message(Command('admin'))
 async def cmd_admin(message: Message):
-    if message.from_user.id == ADMIN_ID and message.chat.type == "private":
+    if message.from_user.id in ADMIN_ID and message.chat.type == "private":
         admin_kb = InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="Добавить бота в группу", callback_data="add_bot_to_group")],
             [InlineKeyboardButton(text="Список групп", callback_data="all_groups")]
@@ -23,11 +24,48 @@ async def cmd_admin(message: Message):
         await message.answer("Добро пожаловать в админ-панель. Выберите действие:", reply_markup=admin_kb)
 
 
+@router.callback_query(F.data.startswith("adduser_"))
+async def add_user_group(callback_query: CallbackQuery):
+    user_id = callback_query.data.split("_")[1]
+    group_id = callback_query.data.split("_")[2]
+    with SessionLocal() as db_session:
+    # Сохраняем информацию об оплате
+            payment = UserPayments(
+                user_id=user_id,
+                group_id=group_id,  # Привязываем оплату к группе
+                status="оплачен",
+                verified=True
+            )
+            db_session.add(payment)
+            db_session.commit()
+
+    try:
+        # Снимаем бан, если пользователь был заблокирован в группе
+        await callback_query.bot.unban_chat_member(group_id, int(user_id))
+    except Exception as e:
+        print(f"Ошибка при снятии бана: {e}")
+
+    expire_time = datetime.now() + timedelta(hours=24)
+    new_invite_link = await callback_query.bot.create_chat_invite_link(
+        group_id, expire_date=expire_time, member_limit=10
+    )
+    invite_url = new_invite_link.invite_link
+
+    inline_kb_with_link = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text='Войти в группу', url=invite_url)]
+    ])
+    await callback_query.bot.send_message(
+        chat_id=user_id,
+        text='Перейдите по ссылке что войти в группу',
+        reply_markup=inline_kb_with_link
+    )
+
 
 @router.callback_query(F.data == "add_bot_to_group")
 async def reg_name(callback_query: CallbackQuery, state: FSMContext):
     await state.set_state(RegGroup.name)
     await callback_query.message.answer(f"Введите название группы:")
+
 
 @router.message(RegGroup.name)
 async def process_name(message: Message, state: FSMContext):
@@ -36,6 +74,7 @@ async def process_name(message: Message, state: FSMContext):
     await message.answer("Введите цену для группы:")
 
 group_data = {}
+
 
 @router.message(RegGroup.price)
 async def reg_price(message: Message, state: FSMContext):
@@ -58,52 +97,39 @@ async def reg_price(message: Message, state: FSMContext):
 
 @router.my_chat_member(ChatMemberUpdatedFilter(member_status_changed=JOIN_TRANSITION))
 async def bot_added(event: ChatMemberUpdated):
-    if event.new_chat_member.status == ChatMemberStatus.ADMINISTRATOR:
-        if ADMIN_ID in group_data:
-            group_info = group_data.pop(ADMIN_ID)
-            group_name = group_info.get("name")
-            group_price = group_info.get("price")
-            group_id = event.chat.id
+    if event.from_user.id in ADMIN_ID:
+        print(group_data)
+        group_name = group_data.get(event.from_user.id).get('name')
+        group_price = group_data.get(event.from_user.id).get('price')
+        group_id = event.chat.id
 
-            db = SessionLocal()
-            try:
-                new_group = Groups(
-                    group_name=group_name,
-                    price=group_price,
-                    group_id=group_id
-                )
-                db.add(new_group)
-                db.commit()
-                await event.bot.send_message(
-                    chat_id=ADMIN_ID,
-                    text=(
-                        f"Бот успешно добавлен в группу как администратор!\n"
-                        f"Название группы: {group_name}\n"
-                        f"Цена: {group_price}\n"
-                        f"ID группы: {group_id}"
-                    )
-                )
-            except Exception:
-                db.rollback()
-                await event.bot.send_message(
-                    chat_id=ADMIN_ID,
-                    text=f"Ошибка при сохранении данных группы. Попробуйте заново вести данные"
-                )
-                await event.bot.leave_chat(chat_id=group_id)
-
-            finally:
-                db.close()
-        else:
-            await event.bot.send_message(
-                chat_id=ADMIN_ID,
-                text="Ошибка: данные о группе не найдены. Попробуйте ещё раз."
+        db = SessionLocal()
+        try:
+            new_group = Groups(
+                group_name=group_name,
+                price=group_price,
+                group_id=group_id
             )
-    else:
-        await event.bot.send_message(
-            chat_id=ADMIN_ID,
-            text="Ошибка: бот был добавлен в группу, но не в качестве администратора. Проверьте настройки!"
-        )
+            db.add(new_group)
+            db.commit()
+            await event.bot.send_message(
+                chat_id=ADMIN_ID[0],
+                text=(
+                    f"Бот успешно добавлен в группу как администратор!\n"
+                    f"Название группы: {group_name}\n"
+                    f"Цена входа: {group_price}\n"
+                )
+            )
+        except Exception:
+            db.rollback()
+            await event.bot.send_message(
+                chat_id=ADMIN_ID[0],
+                text=f"Ошибка при сохранении данных группы. Попробуйте заново вести данные"
+            )
+            await event.bot.leave_chat(chat_id=group_id)
 
+        finally:
+            db.close()
 
 
 @router.callback_query(F.data == "all_groups")
