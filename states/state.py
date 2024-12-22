@@ -6,6 +6,7 @@ class RegGroup(StatesGroup):
     price = State()
     group_id = State()
 
+
 class CourseRegistration(StatesGroup):
     waiting_for_phone = State()
     waiting_for_confirmation = State()

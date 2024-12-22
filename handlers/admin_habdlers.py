@@ -1,13 +1,11 @@
-from datetime import datetime, timedelta
-
 from aiogram import Router, F
-from aiogram.enums import ChatMemberStatus
 from aiogram.filters import Command, ChatMemberUpdatedFilter, JOIN_TRANSITION
 from aiogram.types import Message, CallbackQuery, ChatMemberUpdated, InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.fsm.context import FSMContext
 from database import SessionLocal, Groups, UserPayments
 from utils.constants import ADMIN_ID
 from states.state import RegGroup
+
 
 
 router = Router()
@@ -26,39 +24,36 @@ async def cmd_admin(message: Message):
 
 @router.callback_query(F.data.startswith("adduser_"))
 async def add_user_group(callback_query: CallbackQuery):
-    user_id = callback_query.data.split("_")[1]
+    user_id = int(callback_query.data.split("_")[1])
     group_id = callback_query.data.split("_")[2]
+
     with SessionLocal() as db_session:
-    # Сохраняем информацию об оплате
-            payment = UserPayments(
-                user_id=user_id,
-                group_id=group_id,  # Привязываем оплату к группе
-                status="оплачен",
-                verified=True
+        # Проверка на существование пользователя в группе
+        existing_payment = db_session.query(UserPayments).filter_by(
+            user_id=user_id,
+            group_id=group_id
+        ).first()
+
+        if existing_payment:
+            await callback_query.bot.send_message(
+                chat_id=user_id,
+                text="✅ Вы уже добавили его в эту группу."
             )
-            db_session.add(payment)
-            db_session.commit()
+            return  # Прекращаем выполнение, если пользователь уже есть в БД
 
-    try:
-        # Снимаем бан, если пользователь был заблокирован в группе
-        await callback_query.bot.unban_chat_member(group_id, int(user_id))
-    except Exception as e:
-        print(f"Ошибка при снятии бана: {e}")
-
-    expire_time = datetime.now() + timedelta(hours=24)
-    new_invite_link = await callback_query.bot.create_chat_invite_link(
-        group_id, expire_date=expire_time, member_limit=10
-    )
-    invite_url = new_invite_link.invite_link
-
-    inline_kb_with_link = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text='Войти в группу', url=invite_url)]
-    ])
-    await callback_query.bot.send_message(
-        chat_id=user_id,
-        text='Перейдите по ссылке что войти в группу',
-        reply_markup=inline_kb_with_link
-    )
+        # Если записи нет, добавляем пользователя
+        payment = UserPayments(
+            user_id=user_id,
+            group_id=group_id,
+            status="оплачен",
+            verified=True
+        )
+        db_session.add(payment)
+        db_session.commit()
+        await callback_query.bot.send_message(
+            chat_id=user_id,
+            text="✅ Вы успешно добавлены в группу."
+        )
 
 
 @router.callback_query(F.data == "add_bot_to_group")
