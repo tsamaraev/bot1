@@ -21,7 +21,6 @@ class Groups(Base):
     __tablename__ = "group_links"
     id = Column(Integer, primary_key=True, index=True)
     group_name = Column(String, unique=True, index=True, nullable=False)  # Название группы
-    price = Column(Float, nullable=False)  # Цена
     group_id = Column(BigInteger, unique=True, nullable=False)  # ID группы Telegram
     payments = relationship("UserPayments", back_populates="group")  # Связь с платежами
 
