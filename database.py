@@ -11,9 +11,11 @@ class UserPayments(Base):
     __tablename__ = "user_payments"
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(BigInteger, index=True)  # ID пользователя Telegram
+    phone_number = Column(String, nullable=True)  # Новое поле
     status = Column(String, default="не оплачено")
     verified = Column(Boolean, default=False)
     group_id = Column(Integer, ForeignKey("group_links.id"), nullable=False)  # ID группы
+    subscription_end_date = Column(DateTime, nullable=True)  # Дата окончания подписки
     group = relationship("Groups", back_populates="payments")  # Связь с группой
 
 

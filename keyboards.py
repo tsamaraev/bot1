@@ -32,6 +32,21 @@ def generateKeyboard() -> InlineKeyboardMarkup:
     keyboard = InlineKeyboardMarkup(inline_keyboard=buttons)
     return keyboard
 
+def makeMainAdminMenu() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [
+            InlineKeyboardButton(text="Управление подписками", callback_data="manage_subscriptions")
+        ],
+        [
+            InlineKeyboardButton(text="Просмотреть все группы", callback_data="all_groups")
+        ],
+        [
+            InlineKeyboardButton(text="Добавить бота в группу", callback_data="add_bot_to_group")
+        ],
+        [
+            InlineKeyboardButton(text="Назад", callback_data="backToAdminMenu")
+        ]
+    ])
 
 def getmyGroupes(user_id):
     db = SessionLocal()
@@ -51,7 +66,7 @@ def getmyGroupes(user_id):
         print(groupes)
         if not groupes:
             # Если групп нет, добавляем одну кнопку с текстом "Нет доступных групп"
-            buttons.append([InlineKeyboardButton(text="Нет доступных групп", callback_data="no_groups")])
+            buttons.append([InlineKeyboardButton(text="Нет доступных групп ⛔️", callback_data="no_groups")])
 
         else:
             # Если группы есть, создаем кнопки
@@ -132,9 +147,40 @@ def finish_course(user_id):
 
 
 inline_menu = InlineKeyboardMarkup(inline_keyboard=[
-    [InlineKeyboardButton(text='Все курсы', callback_data='all_courses')],
-    [InlineKeyboardButton(text='Мои курсы', callback_data='my_courses')],
-    [InlineKeyboardButton(text='Завершил курс', callback_data='finish_course')]
+    [InlineKeyboardButton(text='Все курсы 📋', callback_data='all_courses')],
+    [InlineKeyboardButton(text='Мои курсы 🗝️', callback_data='my_courses')],
+    [InlineKeyboardButton(text='Завершил курс 🎯', callback_data='finish_course')]
 ])
 
 
+def backToAdminMenu() -> InlineKeyboardMarkup:
+    '''Функция будет возвращать кнопку назад для того чтобы
+     перейти на уровень выше в админ панели'''
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [
+            InlineKeyboardButton(text="Управление подписками", callback_data="manage_subscriptions")
+        ],
+        [
+            InlineKeyboardButton(text="Просмотреть все группы", callback_data="all_groups")
+        ],
+        [
+            InlineKeyboardButton(text="Добавить бота в группу", callback_data="add_bot_to_group")
+        ],
+        [
+            InlineKeyboardButton(text="Назад", callback_data="backToAdminMenu")
+        ]
+    ])
+
+def makeAdminSubscriptionMenu(expiring_users):
+
+    buttons = [
+        [
+            InlineKeyboardButton(
+                text=f"Исткает {user.subscription_end_date.strftime('%Y-%m-%d')}Продлить подписку для {user.user_id}",
+                callback_data=f"extend_subscription_{user.user_id}"
+            )
+        ]
+        for user in expiring_users
+    ]
+    buttons.append([InlineKeyboardButton(text="Назад", callback_data="backToAdminMenu")])
+    return InlineKeyboardMarkup(inline_keyboard=buttons)

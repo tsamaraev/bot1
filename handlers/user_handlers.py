@@ -68,25 +68,45 @@ async def process_phone_number(message: Message, state: FSMContext):
     # Получаем данные из состояния
     user_data = await state.get_data()
     group_name = user_data['group_name']
-    db = SessionLocal()
-    group = db.query(Groups).filter(Groups.group_name == group_name).first()
-    user_mention = hlink(message.from_user.username or f"id: {user_id}", f"tg://user?id={user_id}")
 
-    # Отправляем данные администратору
-    await message.bot.send_message(
-        chat_id=ADMIN_ID[0],
-        text=(
-            f"🔔 Запрос на вступление в группу:\n"
-            f"👤 Пользователь: {user_mention}\n"
-            f"📚 Курс: {group_name}\n"
-            f"📱 Номер телефона: {phone_number}"
-        ),
-        reply_markup=add_user_keyboard(user_id, group.group_id),
-        parse_mode="HTML"
-    )
-    await message.answer("✅ Ваш номер отправлен администратору. Ожидайте связи!")
-    await state.clear()
+    with SessionLocal() as db:
+        # Проверка существования группы
+        group = db.query(Groups).filter(Groups.group_name == group_name).first()
+        if not group:
+            await message.answer("❌ Группа не найдена.")
+            return
 
+        # Проверка на существование пользователя
+        existing_payment = db.query(UserPayments).filter_by(user_id=user_id, group_id=group.group_id).first()
+        if existing_payment:
+            await message.answer("✅ Вы уже отправили запрос на вступление в эту группу.")
+            return
+
+        # Добавляем запись в базу данных с предварительным статусом
+        payment = UserPayments(
+            user_id=user_id,
+            group_id=group.group_id,
+            phone_number=phone_number,  # Сохраняем номер телефона
+            status="ожидает подтверждения",
+        )
+        db.add(payment)
+        db.commit()
+
+        # Уведомляем администратора
+        user_mention = hlink(message.from_user.username or f"id: {user_id}", f"tg://user?id={user_id}")
+        await message.bot.send_message(
+            chat_id=ADMIN_ID[0],
+            text=(
+                f"🔔 Запрос на вступление в группу:\n"
+                f"👤 Пользователь: {user_mention}\n"
+                f"📚 Курс: {group_name}\n"
+                f"📱 Номер телефона: {phone_number}"
+            ),
+            reply_markup=add_user_keyboard(user_id, group.group_id),
+            parse_mode="HTML"
+        )
+        await message.answer("✅ Ваш номер отправлен администратору. Ожидайте подтверждения!")
+        await state.clear()
 
 @router.callback_query(F.data == "finished_course")
 async def finished_course_handler(callback_query: CallbackQuery):

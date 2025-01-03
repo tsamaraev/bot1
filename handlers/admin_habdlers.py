@@ -7,8 +7,7 @@ from aiogram.fsm.context import FSMContext
 from database import SessionLocal, Groups, UserPayments
 from utils.constants import ADMIN_ID
 from states.state import RegGroup
-
-
+from keyboards import backToAdminMenu, makeMainAdminMenu, makeAdminSubscriptionMenu
 
 router = Router()
 
@@ -16,52 +15,66 @@ router = Router()
 @router.message(Command('admin'))
 async def cmd_admin(message: Message):
     if message.from_user.id in ADMIN_ID and message.chat.type == "private":
-        admin_kb = InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="Добавить бота в группу", callback_data="add_bot_to_group")],
-            [InlineKeyboardButton(text="Список групп", callback_data="all_groups")]
-        ])
-
-        await message.answer("Добро пожаловать в админ-панель. Выберите действие:", reply_markup=admin_kb)
-
+        await message.answer("Добро пожаловать в админ-панель. Выберите действие:", reply_markup=makeMainAdminMenu())
 
 @router.callback_query(F.data.startswith("adduser_"))
 async def add_user_group(callback_query: CallbackQuery):
+    """Добавление пользователя в закрытую группу с подтверждением подписки."""
     user_id = int(callback_query.data.split("_")[1])
     group_id = callback_query.data.split("_")[2]
 
     with SessionLocal() as db_session:
-        # Проверка на существование пользователя в группе
-        existing_payment = db_session.query(UserPayments).filter_by(
-            user_id=user_id,
-            group_id=group_id
-        ).first()
+        try:
+            # Проверка существования записи о платеже
+            payment = db_session.query(UserPayments).filter_by(user_id=user_id, group_id=group_id).first()
+            if not payment:
+                await callback_query.message.answer("❌ Пользователь не найден в базе данных.")
+                return
 
-        if existing_payment:
-            await callback_query.bot.send_message(
-                chat_id=ADMIN_ID[0],
-                text="✅ Вы уже добавили его в эту группу."
+            # Обновляем статус на "оплачен" и дату окончания подписки
+            subscription_end_date = datetime.now() + timedelta(days=30)  # Подписка на 30 дней
+            payment.status = "оплачен"
+            payment.subscription_end_date = subscription_end_date
+            db_session.commit()
+
+            # Создаем ссылку на приглашение в группу
+            expire_time = datetime.now() + timedelta(hours=24)  # Срок действия ссылки 24 часа
+            try:
+                new_invite_link = await callback_query.bot.create_chat_invite_link(
+                    group_id, expire_date=expire_time, member_limit=1
+                )
+                invite_url = new_invite_link.invite_link
+
+                # Отправляем уведомление пользователю
+                await callback_query.bot.send_message(
+                    chat_id=user_id,
+                    text=(
+                        f"✅ Вы успешно добавлены в группу \"{group_id}\". "
+                        f"Ваша подписка активна до {subscription_end_date.strftime('%d.%m.%Y %H:%M')}.\n"
+                        f"Перейдите по ссылке, чтобы присоединиться: {invite_url}"
+                    )
+                )
+            except Exception:
+                # Если `user_id` некорректный, уведомляем администратора с номером телефона
+                await callback_query.message.answer(
+                    text=(
+                        f"❗ Не удалось отправить сообщение пользователю.\n"
+                        f"📱 Номер телефона: {payment.phone_number}"
+                    )
+                )
+
+            # Уведомляем администратора
+            await callback_query.message.answer(
+                text=f"✅ Пользователь {user_id} успешно добавлен в группу."
             )
-            return  # Прекращаем выполнение, если пользователь уже есть в БД
 
-        # Если записи нет, добавляем пользователя
-        payment = UserPayments(
-            user_id=user_id,
-            group_id=group_id,
-            status="оплачен",
-            verified=True
-        )
-        db_session.add(payment)
-        db_session.commit()
-        expire_time = datetime.now() + timedelta(hours=24)
-        new_invite_link = await callback_query.bot.create_chat_invite_link(
-            group_id, expire_date=expire_time, member_limit=10
-        )
-        invite_url = new_invite_link.invite_link
-        await callback_query.bot.send_message(
-            chat_id=user_id,
-            text=f"✅ Вы успешно добавлены в группу. \nПерейдите по ссылке: {invite_url}"
-        )
-
+        except Exception as e:
+            db_session.rollback()
+            await callback_query.message.answer(
+                text=f"❌ Произошла ошибка при добавлении пользователя: {str(e)}"
+            )
+        finally:
+            db_session.close()
 
 @router.callback_query(F.data == "add_bot_to_group")
 async def reg_name(callback_query: CallbackQuery, state: FSMContext):
@@ -85,27 +98,6 @@ async def process_name(message: Message, state: FSMContext):
     await message.answer(
         f"Теперь нужно добавить бота в группу в качестве администратора. Используйте эту ссылку: \n\n{invite_link}"
     )
-
-
-
-
-# @router.message(RegGroup.group_id)
-# async def reg_price(message: Message, state: FSMContext):
-#     data = await state.get_data()
-#     group_name = data.get("name")
-#     group_price = message.text
-#
-#     group_data[message.from_user.id] = {
-#         "name": group_name,
-#         "price": group_price,
-#     }
-#
-#     await state.set_state(RegGroup.group_id)
-#     bot_username = (await message.bot.get_me()).username
-#     invite_link = f"https://t.me/{bot_username}?startgroup=true"
-#     await message.answer(
-#         f"Теперь нужно добавить бота в группу в качестве администратора. Используйте эту ссылку: \n\n{invite_link}"
-#     )
 
 
 @router.my_chat_member(ChatMemberUpdatedFilter(member_status_changed=JOIN_TRANSITION))
@@ -156,10 +148,59 @@ async def show_groups(callback_query: CallbackQuery):
                     for group in groups
                 ]
             )
-            await callback_query.message.answer(f"Список групп:\n\n{group_list}")
+            await callback_query.message.edit_text(
+                text=f"Список групп:\n\n{group_list}",
+                reply_markup=backToAdminMenu()
+            )
         else:
             await callback_query.message.answer("В базе данных пока нет групп.")
     except Exception as e:
         await callback_query.message.answer(f"Ошибка при получении данных: {e}")
     finally:
         db.close()
+
+
+@router.callback_query(F.data == 'backToAdminMenu')
+async def adminMenu(callback_query: CallbackQuery):
+    await callback_query.message.edit_text(
+        text=f"Добро пожаловать в админ-панель. Выберите действие:",
+        reply_markup=makeMainAdminMenu()
+    )
+
+@router.callback_query(F.data.startswith("extend_subscription_"))
+async def extend_subscription(callback_query: CallbackQuery):
+    user_id = int(callback_query.data.split("_")[2])
+
+    with SessionLocal() as db_session:
+        payment = db_session.query(UserPayments).filter_by(user_id=user_id).first()
+
+        if payment:
+            payment.subscription_end_date += timedelta(days=30)
+            db_session.commit()
+
+            await callback_query.message.edit_text(
+                text=f"✅ Подписка пользователя {user_id} продлена на месяц."
+            )
+            await callback_query.bot.send_message(
+                chat_id=user_id,
+                text="✅ Ваша подписка была продлена администратором на 1 месяц!"
+            )
+        else:
+            await callback_query.message.edit_text("❌ Пользователь не найден.")
+
+@router.callback_query(F.data == "manage_subscriptions")
+async def manage_subscriptions(callback_query: CallbackQuery):
+    with SessionLocal() as db_session:
+        now = datetime.now()
+        expiring_users = db_session.query(UserPayments).filter(
+            UserPayments.subscription_end_date <= now + timedelta(days=7),
+            UserPayments.status == "оплачен"
+        ).all()
+        print(expiring_users)
+        if expiring_users:
+            await callback_query.message.edit_text(
+                text="📋 Список пользователей с истекающими подписками:",
+                reply_markup=makeAdminSubscriptionMenu(expiring_users)
+            )
+        else:
+            await callback_query.message.edit_text("ℹ️ Нет пользователей с истекающими подписками.")
