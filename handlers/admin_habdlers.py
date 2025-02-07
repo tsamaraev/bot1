@@ -1,7 +1,7 @@
 from datetime import datetime, timedelta
 
 from aiogram import Router, F
-from aiogram.filters import Command, ChatMemberUpdatedFilter, JOIN_TRANSITION
+from aiogram.filters import Command, ChatMemberUpdatedFilter, JOIN_TRANSITION, IS_ADMIN
 from aiogram.types import Message, CallbackQuery, ChatMemberUpdated, InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.fsm.context import FSMContext
 from database import SessionLocal, Groups, UserPayments
@@ -16,6 +16,7 @@ router = Router()
 async def cmd_admin(message: Message):
     if message.from_user.id in ADMIN_ID and message.chat.type == "private":
         await message.answer("Добро пожаловать в админ-панель. Выберите действие:", reply_markup=makeMainAdminMenu())
+
 
 @router.callback_query(F.data.startswith("adduser_"))
 async def add_user_group(callback_query: CallbackQuery):
@@ -76,12 +77,15 @@ async def add_user_group(callback_query: CallbackQuery):
         finally:
             db_session.close()
 
+
 @router.callback_query(F.data == "add_bot_to_group")
 async def reg_name(callback_query: CallbackQuery, state: FSMContext):
     await state.set_state(RegGroup.name)
     await callback_query.message.answer(f"Введите название группы:")
 
+
 group_data = {}
+
 
 @router.message(RegGroup.name)
 async def process_name(message: Message, state: FSMContext):
@@ -103,12 +107,21 @@ async def process_name(message: Message, state: FSMContext):
 @router.my_chat_member(ChatMemberUpdatedFilter(member_status_changed=JOIN_TRANSITION))
 async def bot_added(event: ChatMemberUpdated):
     if event.from_user.id in ADMIN_ID:
-        print(group_data)
-        group_name = group_data.get(event.from_user.id).get('name')
+        group_name = group_data.get(event.from_user.id, {}).get('name')
         group_id = event.chat.id
 
         db = SessionLocal()
         try:
+            # Проверяем, есть ли уже эта группа в базе
+            existing_group = db.query(Groups).filter_by(group_id=group_id).first()
+            if existing_group:
+                await event.bot.send_message(
+                    chat_id=ADMIN_ID[0],
+                    text=f"⚠️ Бот уже добавлен в группу '{existing_group.group_name}' (ID: {group_id})."
+                )
+                return  # Выход из функции, чтобы не вставлять дубликат
+
+            # Если группа новая, добавляем её
             new_group = Groups(
                 group_name=group_name,
                 group_id=group_id
@@ -118,20 +131,20 @@ async def bot_added(event: ChatMemberUpdated):
             await event.bot.send_message(
                 chat_id=ADMIN_ID[0],
                 text=(
-                    f"Бот успешно добавлен в группу как администратор!\n"
+                    f"✅ Бот успешно добавлен в группу!\n"
                     f"Название группы: {group_name}\n"
                 )
             )
-        except Exception:
+        except Exception as e:
             db.rollback()
             await event.bot.send_message(
                 chat_id=ADMIN_ID[0],
-                text=f"Ошибка при сохранении данных группы. Попробуйте заново вести данные"
+                text=f"❌ Ошибка при сохранении данных группы: {str(e)}"
             )
             await event.bot.leave_chat(chat_id=group_id)
-
         finally:
             db.close()
+
 
 
 @router.callback_query(F.data == "all_groups")
@@ -167,6 +180,7 @@ async def adminMenu(callback_query: CallbackQuery):
         reply_markup=makeMainAdminMenu()
     )
 
+
 @router.callback_query(F.data.startswith("extend_subscription_"))
 async def extend_subscription(callback_query: CallbackQuery):
     user_id = int(callback_query.data.split("_")[2])
@@ -187,6 +201,7 @@ async def extend_subscription(callback_query: CallbackQuery):
             )
         else:
             await callback_query.message.edit_text("❌ Пользователь не найден.")
+
 
 @router.callback_query(F.data == "manage_subscriptions")
 async def manage_subscriptions(callback_query: CallbackQuery):
